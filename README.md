@@ -6,6 +6,7 @@ Implented as a Azure Function with Node and Puppeteer kind of like a RPA-solutio
 For an Function App use Linux consumption function app with Node.js as runtime and 12 LTS as version.
 
 Example of local.settings.json for running locally:
+
     {
         "IsEncrypted": false,
         "Values": {
