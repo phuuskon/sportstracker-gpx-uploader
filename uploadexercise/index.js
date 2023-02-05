@@ -1,29 +1,60 @@
-const puppeteer = require("puppeteer");
+const puppeteer = require("puppeteer-extra");
 const download = require('download');
 const path = require('path');
 const fs = require('fs');
 const uuid = require('uuid');
+
+// require executablePath from puppeteer
+const { executablePath } = require('puppeteer')
+
+// add stealth plugin and use defaults (all evasion techniques)
+const StealthPlugin = require('puppeteer-extra-plugin-stealth')
+puppeteer.use(StealthPlugin());
+
+function delay(time) {
+    return new Promise(function(resolve) { 
+        setTimeout(resolve, time)
+    });
+ }
 
 module.exports = async function (context, req) {
 
     const username = process.env['stUser'];
     const password = process.env['stPassword'];
     const loginurl = process.env['stLoginUrl'] || "https://www.sports-tracker.com/login";
-    const tmpfilepath = process.env['tmpfilepath'] || __dirname+"/files";
+    const tmpfilepath = process.env['tmpfilepath'] || __dirname + "/files";
     const gpxUrl = req.query.gpxurl;
-    const browser = await puppeteer.launch();
-    const uploadStatus = 1;
+    const browser = await puppeteer.launch({
+        headless: true,
+        executablePath: executablePath(),
+    });
+    let uploadStatus = 1;
 
     try {
+        context.log('starting browser');
         
         const page = await browser.newPage();
-        await page.goto(loginurl, {waitUntil: 'networkidle2'});
+        await page.goto(loginurl, { waitUntil: 'networkidle2' });
 
-        console.info('browser opened');
+        context.log('browser opened');
 
         await page.click('#onetrust-accept-btn-handler');
 
-        console.info('cookies clicked');
+        context.log('cookies clicked');
+
+        await page.waitForSelector("iframe")
+        const elementHandle = await page.$("#recaptcha-container > div > div > iframe")
+        const iframe = await elementHandle.contentFrame()
+
+        //now iframe is like "page", and to click in the button you can do this
+        await iframe.click("#recaptcha-anchor > div.recaptcha-checkbox-border")
+        //or
+        await iframe.evaluate(() => {
+            document.querySelector("#recaptcha-anchor > div.recaptcha-checkbox-border").click()
+        })
+
+        context.log('recaptcha clicked');
+        await delay(2000);
 
         await page.waitForSelector('input[id=username]');
         await page.$eval('input[id=username]', (el, username) => {
@@ -35,57 +66,60 @@ module.exports = async function (context, req) {
             return el.value = password;
         }, password);
 
-        console.log('login filled');
+        context.log('login filled');
 
-        await page.waitForTimeout(2000);
+        await delay(5000);
+
         await page.click('.submit');
-        await page.waitForTimeout(2000);
+        await delay(12000);
 
-        console.info('logged in');
+        context.log('logged in');
+
+        await page.waitForSelector('.add-workout');
 
         await page.click('.add-workout');
-        await page.waitForTimeout(2000);
+        await delay(2000);
 
         await page.waitForSelector('.import-button');
         await page.click('.import-button');
-        await page.waitForTimeout(2000);
+        await delay(2000);
 
         var tmpfilename = uuid.v4();
-        const filepath = path.join(tmpfilepath, tmpfilename+'.gpx');
+        const filepath = path.join(tmpfilepath, tmpfilename + '.gpx');
         download(gpxUrl).pipe(fs.createWriteStream(filepath));
-        await page.waitForTimeout(10000);
+        await delay(10000);
 
-        console.info('exercise downloaded');
+        context.log('exercise downloaded');
 
         const filename = path.basename(gpxUrl)
-        console.info(filename);
+        context.log(filename);
 
         const fileExists = fs.existsSync(filepath);
-        
-        if(fileExists) {
+
+        if (fileExists) {
             await page.waitForSelector('input[type=file]');
-            await page.waitForTimeout(1000);
+            await delay(2000);
 
             const fileDropHandle = await page.$('input[type=file]');
             await fileDropHandle.uploadFile(filepath);
 
-            await page.waitForTimeout(10000);
+            await delay(10000);
 
-            console.info('gpx uploaded');
+            context.log('gpx uploaded');
 
             await page.waitForSelector('button.save-button');
             let savebtn = 'button.save-button';
             await page.evaluate((savebtn) => document.querySelector(savebtn).click(), savebtn);
-            await page.waitForTimeout(5000);
+            await delay(5000);
 
-            console.info('exercise saved');
-            
+            context.log('exercise saved');
+
             fs.unlinkSync(filepath)
         }
-        
+
     }
-    catch(e) {
-        console.error(e.message);
+    catch (e) {
+        context.log.error(e.message);
         uploadStatus = 0;
     }
 

@@ -6,6 +6,11 @@
         "isEnabled": true,
         "excludedTypes": "Request"
       }
+    },
+    "fileLoggingMode": "always",
+    "logLevel": {
+      "Function": "Trace",
+      "default": "Error"
     }
   },
   "extensionBundle": {
